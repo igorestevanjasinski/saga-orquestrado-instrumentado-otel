@@ -1,0 +1,47 @@
+server:
+  port: 8091
+
+spring:
+  application.name: payment-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKER:localhost:9092}
+    topic:
+      orchestrator: orchestrator
+      payment-success: payment-success
+      payment-fail: payment-fail
+    consumer:
+      group-id: payment-group
+      auto-offset-reset: latest
+  datasource:
+    driver-class-name: io.opentelemetry.instrumentation.jdbc.OpenTelemetryDriver
+    url: jdbc:otel:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:payment-db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+logging:
+  level:
+    org:
+      apache:
+        kafka: OFF
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+      export:
+        step: 15s
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0

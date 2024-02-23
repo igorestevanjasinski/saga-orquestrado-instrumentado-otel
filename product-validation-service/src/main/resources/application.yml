@@ -1,0 +1,52 @@
+server:
+  port: 8090
+
+spring:
+  application.name: product-validation-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKER:localhost:9092}
+    topic:
+      orchestrator: orchestrator
+      product-validation-success: product-validation-success
+      product-validation-fail: product-validation-fail
+    consumer:
+      group-id: product-validation-group
+      auto-offset-reset: latest
+
+  datasource:
+    driver-class-name: io.opentelemetry.instrumentation.jdbc.OpenTelemetryDriver
+    url: jdbc:otel:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:product-db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+
+
+
+logging:
+  level:
+    org:
+      apache:
+        kafka: OFF
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+      export:
+        step: 15s
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0

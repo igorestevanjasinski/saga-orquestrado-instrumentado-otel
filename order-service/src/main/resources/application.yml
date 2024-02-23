@@ -1,0 +1,55 @@
+server:
+  port: 3000
+
+spring:
+  application.name: order-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKER:localhost:9092}
+    topic:
+      start-saga: start-saga
+      notify-ending: notify-ending
+    consumer:
+      group-id: order-group
+      auto-offset-reset: latest
+  cloud:
+    stream:
+      kafka:
+        binder:
+          enable-observation: true
+          headers:
+            - w3c
+
+
+  data:
+    mongodb:
+      database: admin
+      uri: ${MONGO_DB_URI:mongodb://admin:123456@localhost:27017}
+
+
+logging:
+  level:
+    org:
+      apache:
+        kafka: OFF
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  metrics:
+    mongo:
+      command:
+        enabled: false
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+      export:
+        step: 15s
+  tracing:
+    enabled: true
+    propagation:
+      type: W3C
+    sampling:
+      probability: 1.0

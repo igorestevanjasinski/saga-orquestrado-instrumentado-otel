@@ -1,0 +1,245 @@
+version: '3'
+
+services:
+
+  order-db:
+    image: mongo:latest
+    container_name: order-db
+    restart: always
+    networks:
+      - orchestrator-saga
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=123456
+    ports:
+      - 27017:27017
+
+  product-db:
+    container_name: product-db
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: product-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /data/postgres
+    networks:
+      - orchestrator-saga
+    ports:
+      - "5432:5432"
+
+  payment-db:
+    container_name: payment-db
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: payment-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /data/postgres
+    networks:
+      - orchestrator-saga
+    ports:
+      - "5433:5432"
+
+  inventory-db:
+    container_name: inventory-db
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: inventory-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /data/postgres
+    networks:
+      - orchestrator-saga
+    ports:
+      - "5434:5432"
+
+  kafka:
+    container_name: kafka
+    image: obsidiandynamics/kafka
+    restart: "no"
+    ports:
+      - "2181:2181"
+      - "9092:9092"
+    networks:
+      - orchestrator-saga
+    environment:
+      KAFKA_LISTENERS: "INTERNAL://:29092,EXTERNAL://:9092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_ZOOKEEPER_SESSION_TIMEOUT: "6000"
+      KAFKA_RESTART_ATTEMPTS: "10"
+      KAFKA_RESTART_DELAY: "5"
+      ZOOKEEPER_AUTOPURGE_PURGE_INTERVAL: "0"
+    volumes:
+      - ./data/kafka/data:/var/lib/kafka/data
+
+  redpanda-console:
+    container_name: redpanda
+    image: docker.redpanda.com/vectorized/console:latest
+    restart: on-failure
+    entrypoint: /bin/sh
+    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
+    ports:
+      - "8081:8080"
+    networks:
+      - orchestrator-saga
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["kafka:29092"]
+    depends_on:
+      - "kafka"
+
+  order-service:
+    build: './order-service'
+    container_name: order-service
+    depends_on:
+      - order-db
+      - kafka
+    networks:
+      - orchestrator-saga
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - KAFKA_BROKER=kafka:29092
+      - MONGO_DB_URI=mongodb://admin:123456@order-db:27017
+    ports:
+      - 3000:3000
+
+  orchestrator-service:
+    build: './orchestrator-service'
+    container_name: orchestrator-service
+    depends_on:
+      - kafka
+    networks:
+      - orchestrator-saga
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - KAFKA_BROKER=kafka:29092
+    ports:
+      - 8080:8080
+
+  product-validation-service:
+    build: './product-validation-service'
+    container_name: product-validation-service
+    depends_on:
+      - product-db
+      - kafka
+    networks:
+      - orchestrator-saga
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - KAFKA_BROKER=kafka:29092
+      - DB_HOST=product-db
+      - DB_PORT=5432
+      - DB_NAME=product-db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    ports:
+      - 8090:8090
+
+  payment-service:
+    build: './payment-service'
+    container_name: payment-service
+    depends_on:
+      - payment-db
+      - kafka
+    networks:
+      - orchestrator-saga
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - KAFKA_BROKER=kafka:29092
+      - DB_HOST=payment-db
+      - DB_PORT=5432
+      - DB_NAME=payment-db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    ports:
+      - 8091:8091
+
+  inventory-service:
+    build: './inventory-service'
+    container_name: inventory-service
+    depends_on:
+      - inventory-db
+      - kafka
+    networks:
+      - orchestrator-saga
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - KAFKA_BROKER=kafka:29092
+      - DB_HOST=inventory-db
+      - DB_PORT=5432
+      - DB_NAME=inventory-db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    ports:
+      - 8092:8092
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib
+    restart: always
+    command:
+      - --config=/etc/otelcol-cont/otel-collector.yml
+    networks:
+      - orchestrator-saga
+    volumes:
+      - ./collector/otel-collector.yml:/etc/otelcol-cont/otel-collector.yml
+    ports:
+      - "1888:1888" # pprof extension
+      - "8888:8888" # Prometheus metrics exposed by the collector
+      - "8889:8889" # Prometheus exporter metrics
+      - "13133:13133" # health_check extension
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP http receiver
+      - "55679:55679" # zpages extension
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana
+    networks:
+      - orchestrator-saga
+    volumes:
+      - ./grafana/datasources/:/etc/grafana/provisioning/datasources/
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - "3001:3000"
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus
+    restart: always
+    networks:
+      - orchestrator-saga
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yml" ]
+    networks:
+      - orchestrator-saga
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo.yml
+    ports:
+      - "3200:3200"   # tempo
+      - "4317"  # otlp grpc
+  loki:
+    image: grafana/loki:latest
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - orchestrator-saga
+    ports:
+      - "3100:3100"
+
+networks:
+  orchestrator-saga:
+    driver: bridge
