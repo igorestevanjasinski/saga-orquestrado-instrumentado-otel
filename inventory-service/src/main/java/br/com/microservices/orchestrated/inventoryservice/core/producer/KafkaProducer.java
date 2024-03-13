@@ -33,8 +33,6 @@ public class KafkaProducer {
     public void sendEvent(String payload){
         try {
             log.info("Sending event to topic {}, with data {}", orchestratorTopic, payload);
-            //var spanContext = Span.fromContext(Context.current()).getSpanContext();
-            //openTelemetry.getPropagators().getTextMapPropagator().inject(Context.current(), record);
             kafkaTemplate.send(orchestratorTopic, payload);
         }catch (Exception ex){
             log.error("Error trying to send data to topic {} with data {}", orchestratorTopic, payload, ex);
