@@ -46,6 +46,7 @@ Payload:
 http://localhost:3001/explore
 ```
 - Search for order-service
+  
   ![image](https://github.com/igorestevanjasinski/saga-orquestrado-instrumentado-otel/assets/108187126/01f745b4-c713-4cfc-a6c7-6fc736ddbba0)
 
 
